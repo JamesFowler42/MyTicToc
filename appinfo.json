@@ -1,0 +1,25 @@
+{
+    "appKeys": {},
+    "capabilities": [
+        ""
+    ],
+    "companyName": "James Fowler",
+    "enableMultiJS": true,
+    "longName": "My TicToc",
+    "projectType": "native",
+    "resources": {
+        "media": []
+    },
+    "sdkVersion": "3",
+    "shortName": "My TicToc",
+    "targetPlatforms": [
+        "aplite",
+        "basalt",
+        "chalk"
+    ],
+    "uuid": "12eef850-a261-4c3f-a06c-b939e62f49c5",
+    "versionLabel": "1.0",
+    "watchapp": {
+        "watchface": true
+    }
+}
