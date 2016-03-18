@@ -42,11 +42,13 @@
 typedef struct {
   int hours;
   int minutes;
+  int day;
 } Time;
 
 static Window *window;
 static Layer *background_layer;
 static Layer *hands_layer;
+static TextLayer *s_day_layer;
 
 static GPoint screen_centre;
 static Time s_last_time;
@@ -54,6 +56,7 @@ static int animpercent = 0;
 static bool are_we_animating = true;
 static bool bt_on = false;
 static GColor hour_colour;
+static bool show_day = false;
 
 /*
  * Animation start
@@ -96,6 +99,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed) {
   s_last_time.hours = tick_time->tm_hour;
   s_last_time.hours -= (s_last_time.hours > 12) ? 12 : 0;
   s_last_time.minutes = tick_time->tm_min;
+  s_last_time.day = tick_time->tm_mday;
+  
+  if (show_day)
+    show_day = false;
 
   // Redraw
   if (hands_layer) {
@@ -112,7 +119,7 @@ static void handle_bluetooth(bool connected) {
     // Want to hide the top dot if not in bt range
     bt_on = connected;
     // Redraw
-    if (background_layer) {
+    if (background_layer) { 
       layer_mark_dirty(background_layer);
     }  
   }
@@ -157,17 +164,32 @@ static int32_t get_angle_for_hour(int hour, int minute) {
 /*
  * Set up the background, complete with 12 o'clock blobby
  * shown only after animation complete and only if bluetooth is available
+ * show day after a tap.
  */
 static void background_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, BACKGROUND_COLOUR);
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
   graphics_context_set_antialiased(ctx, ANTIALIASING);
-  if (bt_on && !are_we_animating) {
-    graphics_context_set_fill_color(ctx, TOP_BLOB_COLOUR);
-    GRect insetbounds = grect_inset(bounds, GEdgeInsets(2));
-    GPoint pos = gpoint_from_polar(insetbounds, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0));
-    graphics_fill_circle(ctx, pos, TOP_BLOB_SIZE);
+  if (!are_we_animating) {
+    if (bt_on) {
+      graphics_context_set_fill_color(ctx, TOP_BLOB_COLOUR);
+      GRect insetbounds = grect_inset(bounds, GEdgeInsets(2));
+      GPoint pos = gpoint_from_polar(insetbounds, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0));
+      graphics_fill_circle(ctx, pos, TOP_BLOB_SIZE);
+    }
+    if (show_day) {
+         static char s_day_text[] = "00";
+         snprintf(s_day_text, sizeof(s_day_text), "%d",  s_last_time.day);
+         if (s_last_time.minutes>30) {
+           text_layer_set_text_alignment(s_day_layer, GTextAlignmentRight);
+         } else {
+           text_layer_set_text_alignment(s_day_layer, GTextAlignmentLeft);
+         }
+         text_layer_set_text(s_day_layer, s_day_text);
+    } else {
+         text_layer_set_text(s_day_layer, "");
+    }
   }
 }
 
@@ -245,12 +267,23 @@ static void window_load(Window *window) {
   layer_set_update_proc(hands_layer, hands_update_proc);
   layer_add_child(window_layer, background_layer);
   layer_add_child(background_layer, hands_layer);
+  
+  s_day_layer = text_layer_create(GRect(5, screen_centre.y-34/2, window_bounds.size.w-5, 34));
+  text_layer_set_text_color(s_day_layer, GColorWhite);
+  text_layer_set_background_color(s_day_layer, GColorClear);
+  text_layer_set_font(s_day_layer, fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS));
+  text_layer_set_text_alignment(s_day_layer, GTextAlignmentLeft);
+  text_layer_set_text(s_day_layer, "");
+  
+  layer_add_child(background_layer, text_layer_get_layer(s_day_layer));
+
 }
 
 /*
  * Unload the window
  */
 static void window_unload(Window *window) {
+  text_layer_destroy(s_day_layer);
   layer_destroy(background_layer);
   layer_destroy(hands_layer);
 }
@@ -268,6 +301,16 @@ static int anim_percentage(AnimationProgress dist_normalized, int max) {
 static void radius_update(Animation *anim, AnimationProgress dist_normalized) {
   animpercent = anim_percentage(dist_normalized, 100);
   layer_mark_dirty(hands_layer);
+}
+
+/*
+ * A tap event occured
+ */
+static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
+   if (background_layer) {
+      show_day = true;
+      layer_mark_dirty(background_layer);
+    }  
 }
 
 /*
@@ -296,6 +339,10 @@ static void init() {
   // Prepare animations
   AnimationImplementation radius_impl = { .update = radius_update };
   animate(ANIMATION_DURATION, ANIMATION_DELAY, &radius_impl);
+  
+  // Subscribe for tap events
+  accel_tap_service_subscribe(accel_tap_handler);
+
 }
 
 /*
